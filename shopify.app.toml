@@ -1,0 +1,20 @@
+client_id = "8a3b763a7dfe186570fdddc7c128f002"
+name = "meowapps-template"
+application_url = "https://draw-arcade-notebook-noted.trycloudflare.com/app"
+embedded = true
+
+[webhooks]
+api_version = "2026-01"
+
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled", "app/scopes_update" ]
+uri = "https://draw-arcade-notebook-noted.trycloudflare.com/api/webhook"
+
+[access_scopes]
+scopes = "write_products"
+
+[auth]
+redirect_urls = [ "https://draw-arcade-notebook-noted.trycloudflare.com/api/auth/callback" ]
+
+[access.admin]
+embedded_app_direct_api_access = true

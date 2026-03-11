@@ -1,0 +1,24 @@
+{
+  "name": "meowapps",
+  "type": "module",
+  "exports": {
+    ".": "./src/lib/index.js"
+  },
+  "bin": {
+    "meowapps": "./scripts/meowapps.js"
+  },
+  "scripts": {
+    "test": "node scripts/dev.js"
+  },
+  "dependencies": {
+    "@shopify/shopify-api": "^12.3.0",
+    "@shopify/shopify-app-express": "^6.0.5",
+    "esbuild": "^0.27.3",
+    "firebase-admin": "^13.7.0",
+    "react-dom": "^19.2.4",
+    "smol-toml": "^1.6.0"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0"
+  }
+}
