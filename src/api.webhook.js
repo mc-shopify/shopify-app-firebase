@@ -6,6 +6,9 @@ export async function POST(req, res) {
     webhookHandlers: {
       APP_UNINSTALLED: { callback: handleAppUninstalled },
       APP_SCOPES_UPDATE: { callback: handleScopesUpdate },
+      CUSTOMERS_DATA_REQUEST: { callback: handleGdpr },
+      CUSTOMERS_REDACT: { callback: handleGdpr },
+      SHOP_REDACT: { callback: handleGdpr },
     },
   })(req, res)
 }
@@ -29,4 +32,9 @@ async function handleScopesUpdate(topic, shop, body) {
     session.scope = body.current?.toString()
     await storage.storeSession(session)
   }
+}
+
+// GDPR mandatory compliance — app stores no customer data, acknowledge only.
+async function handleGdpr(topic, shop) {
+  console.log(`Received ${topic} webhook for ${shop}`)
 }
