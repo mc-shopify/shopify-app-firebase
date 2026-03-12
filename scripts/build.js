@@ -210,7 +210,7 @@ async function bundleClient(c, routes) {
     fs.writeFileSync(htmlPath, `<!DOCTYPE html>
 <html lang="en"><head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${meta.title || 'App'}</title>${meta.description ? `\n  <meta name="description" content="${meta.description}">` : ''}${c.env.SHOPIFY_API_KEY && h.type === 'app' ? `\n  <meta name="shopify-api-key" content="${c.env.SHOPIFY_API_KEY}" />` : ''}${scripts}
+  <title>${meta.title || 'App'}</title>${meta.description ? `\n  <meta name="description" content="${meta.description}">` : ''}${h.type === 'app' ? `\n  <meta name="robots" content="noindex">` : ''}${c.env.SHOPIFY_API_KEY && h.type === 'app' ? `\n  <meta name="shopify-api-key" content="${c.env.SHOPIFY_API_KEY}" />` : ''}${scripts}
 </head><body>
   <div id="root"></div>
   <script type="module" src="/assets/${entryMap[h.type]}"></script>

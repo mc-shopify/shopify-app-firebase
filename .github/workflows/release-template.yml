@@ -15,6 +15,9 @@ jobs:
           node-version: 22
 
       - name: Generate and push template
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          COMMIT_SHA: ${{ github.sha }}
         run: |
           repo=https://x-access-token:${{ secrets.TEMPLATE_PAT }}@github.com/meowapps/meowapps-template.git
           git clone "$repo" meowapps-template
@@ -28,7 +31,7 @@ jobs:
 
           cp .firebaserc .gitignore shopify.app.toml meowapps-template/
           mkdir -p meowapps-template/src
-          cp src/page.index.jsx src/app.index.jsx src/app.additional.jsx src/app._layout.jsx meowapps-template/src/
+          cp src/page.index.jsx src/app.index.jsx src/app.additional.jsx src/app._layout.jsx src/app.billing.jsx meowapps-template/src/
 
           cat > meowapps-template/package.json << 'PKG'
           {
@@ -49,4 +52,5 @@ jobs:
           npm install
 
           git add -A
-          git diff --cached --quiet || git commit -m "${{ github.event.head_commit.message }} (meowapps/meowapps@${{ github.sha }})" && git push
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+          git diff --cached --quiet || git commit -m "$FIRST_LINE (meowapps/meowapps@$COMMIT_SHA)" && git push

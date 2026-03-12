@@ -1,6 +1,6 @@
 export default function AppLayout({ children }) {
   if (!new URLSearchParams(location.search).get('shop')) {
-    return <p>This app must be accessed through the Shopify Admin.</p>
+    return <pre>This app must be accessed through the Shopify Admin.</pre>
   }
 
   return (
