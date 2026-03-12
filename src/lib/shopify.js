@@ -12,6 +12,11 @@ initializeApp()
 export const shopify = lazy(createShopifyApp)
 export const cookieStorage = createCookieStorage()
 export const authenticate = authenticateFn
+export const BillingInterval = Object.freeze({
+  Monthly: 'EVERY_30_DAYS',
+  Annual: 'ANNUAL',
+  OneTime: 'ONE_TIME',
+})
 
 // --- shopify ---------------------------------------------------------------
 
@@ -58,7 +63,7 @@ function createCookieStorage() {
 
 // --- auth ------------------------------------------------------------------
 
-// Authenticate a request via Shopify middleware, return session + graphql helper.
+// Authenticate a request via Shopify middleware, return session + graphql + billing helpers.
 async function authenticateFn(req, res) {
   await new Promise((resolve, reject) => {
     shopify.validateAuthenticatedSession()(req, res, (err) => {
@@ -70,14 +75,143 @@ async function authenticateFn(req, res) {
   if (!session) throw new Error('Unauthorized')
 
   const client = new shopify.api.clients.Graphql({ session })
+  const graphql = async (query, variables) => {
+    const { data, errors } = await client.request(query, { variables })
+    if (errors) throw new Error(errors.map(e => e.message).join(', '))
+    return data
+  }
+
+  return { session, graphql, billing: createBilling(session.shop, graphql) }
+}
+
+// --- billing ---------------------------------------------------------------
+
+// Billing helpers scoped to a shop. Supports subscriptions and one-time purchases.
+// All methods query Shopify directly as source of truth — no Firestore cache.
+function createBilling(shop, graphql) {
+  // Billing returnUrl must go through admin.shopify.com so Shopify injects session context
+  const storeHandle = shop.replace('.myshopify.com', '')
+  const url = (path) => `https://admin.shopify.com/store/${storeHandle}/apps/${process.env.SHOPIFY_API_KEY}${path}`
+
   return {
-    session,
-    graphql: async (query, variables) => {
-      const { data, errors } = await client.request(query, { variables })
-      if (errors) throw new Error(errors.map(e => e.message).join(', '))
-      return data
+    // Query Shopify for active subscription status.
+    async check() {
+      const data = await graphql(`query { currentAppInstallation { activeSubscriptions {
+        id name status test trialDays createdAt currentPeriodEnd
+        lineItems { plan { pricingDetails {
+          ... on AppRecurringPricing { price { amount currencyCode } interval }
+        } } }
+      } } }`)
+      const subs = data.currentAppInstallation?.activeSubscriptions || []
+      if (!subs.length) return { active: false }
+      return { active: true, ...mapSubscription(subs[0]) }
+    },
+
+    // Ensure active billing exists. Queries Shopify, or creates a new charge if none found.
+    // Returns { active: true, ...record } or { active: false, confirmationUrl }.
+    async require({ name, price, interval = BillingInterval.Monthly, trialDays = 0, test = false, returnUrl = '/app' }) {
+      return interval === BillingInterval.OneTime
+        ? requireOneTime(graphql, { name, price, test, returnUrl: url(returnUrl) })
+        : requireSubscription(graphql, { name, price, interval, trialDays, test, returnUrl: url(returnUrl) })
+    },
+
+    // Cancel active subscription. One-time purchases cannot be cancelled via API.
+    async cancel(id, { prorate = true } = {}) {
+      if (!id.includes('AppSubscription')) return { status: 'CANCELLED' }
+
+      const result = await graphql(`mutation ($id: ID!, $prorate: Boolean) {
+        appSubscriptionCancel(id: $id, prorate: $prorate) {
+          appSubscription { id status }
+          userErrors { field message }
+        }
+      }`, { id, prorate })
+
+      const { userErrors } = result.appSubscriptionCancel
+      if (userErrors?.length) throw new Error(userErrors.map(e => e.message).join(', '))
+      return { status: 'CANCELLED' }
     },
   }
+}
+
+// Map Shopify AppSubscription object to a flat record.
+function mapSubscription(s) {
+  const pricing = s.lineItems?.[0]?.plan?.pricingDetails
+  return {
+    type: 'subscription',
+    id: s.id, name: s.name, status: s.status, test: s.test,
+    trialDays: s.trialDays, createdAt: s.createdAt,
+    currentPeriodEnd: s.currentPeriodEnd,
+    price: parseFloat(pricing?.price?.amount || 0),
+  }
+}
+
+// Query active subscriptions, or create a new one.
+async function requireSubscription(graphql, { name, price, interval, trialDays, test, returnUrl }) {
+  const data = await graphql(`query { currentAppInstallation { activeSubscriptions {
+    id name status test trialDays createdAt currentPeriodEnd
+    lineItems { plan { pricingDetails {
+      ... on AppRecurringPricing { price { amount currencyCode } interval }
+    } } }
+  } } }`)
+  const subs = data.currentAppInstallation?.activeSubscriptions || []
+
+  if (subs.length) return { active: true, ...mapSubscription(subs[0]) }
+
+  const result = await graphql(`mutation ($name: String!, $returnUrl: URL!,
+    $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int, $test: Boolean) {
+    appSubscriptionCreate(name: $name, returnUrl: $returnUrl,
+      lineItems: $lineItems, trialDays: $trialDays, test: $test) {
+      confirmationUrl
+      userErrors { field message }
+    }
+  }`, {
+    name, trialDays, test, returnUrl,
+    lineItems: [{
+      plan: {
+        appRecurringPricingDetails: {
+          price: { amount: price, currencyCode: 'USD' },
+          interval: interval,
+        }
+      },
+    }],
+  })
+
+  return extractConfirmation(result.appSubscriptionCreate)
+}
+
+// Query one-time purchases by name, or create a new one.
+async function requireOneTime(graphql, { name, price, test, returnUrl }) {
+  // oneTimePurchases returns all historical purchases — filter by name and ACTIVE status
+  const data = await graphql(`query ($first: Int!) { currentAppInstallation {
+    oneTimePurchases(first: $first, sortKey: CREATED_AT, reverse: true) {
+      nodes { id name status test price { amount currencyCode } createdAt }
+    }
+  } }`, { first: 25 })
+  const match = data.currentAppInstallation?.oneTimePurchases?.nodes
+    ?.find(p => p.name === name && p.status === 'ACTIVE')
+
+  if (match) {
+    return {
+      active: true, type: 'one_time',
+      id: match.id, name: match.name, status: match.status, test: match.test,
+      price: parseFloat(match.price?.amount || 0), createdAt: match.createdAt,
+    }
+  }
+
+  const result = await graphql(`mutation ($name: String!, $price: MoneyInput!, $returnUrl: URL!, $test: Boolean) {
+    appPurchaseOneTimeCreate(name: $name, price: $price, returnUrl: $returnUrl, test: $test) {
+      confirmationUrl
+      userErrors { field message }
+    }
+  }`, { name, test, returnUrl, price: { amount: price, currencyCode: 'USD' } })
+
+  return extractConfirmation(result.appPurchaseOneTimeCreate)
+}
+
+// Extract confirmationUrl or throw on userErrors.
+function extractConfirmation(payload) {
+  if (payload.userErrors?.length) throw new Error(payload.userErrors.map(e => e.message).join(', '))
+  return { active: false, confirmationUrl: payload.confirmationUrl }
 }
 
 // --- utility ---------------------------------------------------------------

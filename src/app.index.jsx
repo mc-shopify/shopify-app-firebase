@@ -35,7 +35,9 @@ export default function Index() {
           <s-link href="/app/additional">additional page in the app nav</s-link>
           , as well as an{' '}
           <s-link href="https://shopify.dev/docs/api/admin-graphql" target="_blank">Admin GraphQL</s-link>
-          {' '}mutation demo, to provide a starting point for app development.
+          {' '}mutation demo and a{' '}
+          <s-link href="/app/billing">billing demo</s-link>
+          , to provide a starting point for app development.
         </s-paragraph>
       </s-section>
 
