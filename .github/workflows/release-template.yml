@@ -31,7 +31,7 @@ jobs:
 
           cp .firebaserc .gitignore shopify.app.toml meowapps-template/
           mkdir -p meowapps-template/src
-          cp src/page.index.jsx src/app.index.jsx src/app.additional.jsx src/app._layout.jsx src/app.billing.jsx meowapps-template/src/
+          cp src/page.index.jsx src/app.index.jsx src/app.additional.jsx src/app._layout.jsx meowapps-template/src/
 
           cat > meowapps-template/package.json << 'PKG'
           {

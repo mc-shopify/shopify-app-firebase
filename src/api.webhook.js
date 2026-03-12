@@ -1,6 +1,8 @@
 import { shopify } from 'meowapps'
 
+// Process incoming Shopify webhooks.
 export async function POST(req, res) {
+  // Firebase parses JSON body but Shopify SDK expects raw buffer for HMAC verification
   if (req.rawBody) req.body = req.rawBody
   await shopify.processWebhooks({
     webhookHandlers: {
@@ -13,7 +15,7 @@ export async function POST(req, res) {
   })(req, res)
 }
 
-// ---------------------------------------------------------------------------
+// --- handlers --------------------------------------------------------------
 
 // Delete all sessions for the uninstalled shop.
 async function handleAppUninstalled(topic, shop) {
@@ -28,10 +30,10 @@ async function handleScopesUpdate(topic, shop, body) {
   console.log(`Received ${topic} webhook for ${shop}`)
   const storage = shopify.config.sessionStorage
   const sessions = await storage.findSessionsByShop(shop)
-  for (const session of sessions) {
-    session.scope = body.current?.toString()
-    await storage.storeSession(session)
-  }
+  await Promise.all(sessions.map(s => {
+    s.scope = body.current?.toString()
+    return storage.storeSession(s)
+  }))
 }
 
 // GDPR mandatory compliance — app stores no customer data, acknowledge only.

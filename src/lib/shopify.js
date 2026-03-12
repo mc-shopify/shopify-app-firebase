@@ -145,18 +145,8 @@ function mapSubscription(s) {
   }
 }
 
-// Query active subscriptions, or create a new one.
+// Create a new subscription. Always creates — caller decides whether to call this.
 async function requireSubscription(graphql, { name, price, interval, trialDays, test, returnUrl }) {
-  const data = await graphql(`query { currentAppInstallation { activeSubscriptions {
-    id name status test trialDays createdAt currentPeriodEnd
-    lineItems { plan { pricingDetails {
-      ... on AppRecurringPricing { price { amount currencyCode } interval }
-    } } }
-  } } }`)
-  const subs = data.currentAppInstallation?.activeSubscriptions || []
-
-  if (subs.length) return { active: true, ...mapSubscription(subs[0]) }
-
   const result = await graphql(`mutation ($name: String!, $returnUrl: URL!,
     $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int, $test: Boolean) {
     appSubscriptionCreate(name: $name, returnUrl: $returnUrl,
@@ -170,7 +160,7 @@ async function requireSubscription(graphql, { name, price, interval, trialDays, 
       plan: {
         appRecurringPricingDetails: {
           price: { amount: price, currencyCode: 'USD' },
-          interval: interval,
+          interval,
         }
       },
     }],

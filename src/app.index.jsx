@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { authenticate } from 'meowapps'
+import { useState, useEffect } from 'react'
+import { authenticate, BillingInterval } from 'meowapps'
 
 export const meta = { title: 'Dashboard', description: 'Shopify app dashboard' }
 
@@ -7,19 +7,10 @@ export default function Index() {
   const [loading, setLoading] = useState(false)
   const [product, setProduct] = useState(null)
   const [variant, setVariant] = useState(null)
+  const [billingLoading, setBillingLoading] = useState(true)
+  const [billingStatus, setBillingStatus] = useState(null)
 
-  const generateProduct = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/app.rpc', { method: 'POST' })
-      const data = await res.json()
-      setProduct(data.product)
-      setVariant(data.variant)
-      shopify.toast.show('Product created')
-    } finally {
-      setLoading(false)
-    }
-  }
+  useEffect(() => { rpc({ action: 'billing.check' }).then(setBillingStatus).finally(() => setBillingLoading(false)) }, [])
 
   return (
     <s-page heading="Shopify app template">
@@ -35,9 +26,7 @@ export default function Index() {
           <s-link href="/app/additional">additional page in the app nav</s-link>
           , as well as an{' '}
           <s-link href="https://shopify.dev/docs/api/admin-graphql" target="_blank">Admin GraphQL</s-link>
-          {' '}mutation demo and a{' '}
-          <s-link href="/app/billing">billing demo</s-link>
-          , to provide a starting point for app development.
+          {' '}mutation demo and billing, to provide a starting point for app development.
         </s-paragraph>
       </s-section>
 
@@ -78,6 +67,37 @@ export default function Index() {
         )}
       </s-section>
 
+      <s-section heading="Get started with billing">
+        <s-paragraph>
+          Manage subscriptions and one-time purchases using the billing API. Learn more about{' '}
+          <s-link href="https://shopify.dev/docs/apps/billing" target="_blank">Shopify app billing</s-link>.
+        </s-paragraph>
+        <s-stack direction="inline" gap="base">
+          <s-button onClick={() => subscribe('monthly')} disabled={billingLoading}>Monthly — $5</s-button>
+          <s-button onClick={() => subscribe('annual')} disabled={billingLoading}>Annual — $50</s-button>
+          <s-button onClick={() => subscribe('oneTime')} variant="secondary" disabled={billingLoading}>One-time — $10</s-button>
+        </s-stack>
+        {billingStatus && (
+          <s-section heading="Subscription status">
+            {billingStatus.active ? (
+              <s-banner heading="Active" tone="success">
+                <s-text>Plan: {billingStatus.name}</s-text>
+                <s-text>Price: ${billingStatus.price}</s-text>
+                {billingStatus.trialDays > 0 && <s-text>Trial: {billingStatus.trialDays} days</s-text>}
+                {billingStatus.currentPeriodEnd && <s-text>Period ends: {new Date(billingStatus.currentPeriodEnd).toLocaleDateString()}</s-text>}
+                <s-button variant="tertiary" tone="critical" disabled={billingLoading} onClick={cancelSubscription}>
+                  Cancel subscription
+                </s-button>
+              </s-banner>
+            ) : (
+              <s-banner heading="No active subscription" tone="warning">
+                <s-text>Choose a plan above to get started.</s-text>
+              </s-banner>
+            )}
+          </s-section>
+        )}
+      </s-section>
+
       <s-section slot="aside" heading="App template specs">
         <s-paragraph><s-text>Platform: </s-text><s-link href="https://firebase.google.com/" target="_blank">Firebase</s-link></s-paragraph>
         <s-paragraph><s-text>Build: </s-text><s-link href="https://esbuild.github.io/" target="_blank">esbuild</s-link></s-paragraph>
@@ -97,11 +117,63 @@ export default function Index() {
       </s-section>
     </s-page>
   )
+
+  async function generateProduct() {
+    setLoading(true)
+    try {
+      const data = await rpc({ action: 'product' })
+      setProduct(data.product)
+      setVariant(data.variant)
+      shopify.toast.show('Product created')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function subscribe(interval) {
+    setBillingLoading(true)
+    try {
+      const data = await rpc({ action: 'billing.subscribe', interval })
+      if (data.confirmationUrl) return open(data.confirmationUrl, '_top')
+      setBillingStatus(data)
+      shopify.toast.show('Subscription is active')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
+
+  async function cancelSubscription() {
+    setBillingLoading(true)
+    try {
+      await rpc({ action: 'billing.cancel', id: billingStatus.id })
+      setBillingStatus({ active: false })
+      shopify.toast.show('Subscription cancelled')
+    } finally {
+      setBillingLoading(false)
+    }
+  }
 }
 
-export async function POST(req, res) {
-  const { graphql } = await authenticate(req, res)
+function rpc(body) {
+  return fetch('/app.rpc', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => r.json())
+}
 
+// --- rpc -------------------------------------------------------------------
+
+// Route RPC actions to the appropriate handler.
+export async function POST(req, res) {
+  const { action } = req.body || {}
+  if (action === 'product' || !action) return handleProduct(req, res)
+  if (action?.startsWith('billing.')) return handleBilling(req, res)
+}
+
+// Create a demo product with a random color, then set its variant price to $100.
+async function handleProduct(req, res) {
+  const { graphql } = await authenticate(req, res)
   const color = ['Red', 'Orange', 'Yellow', 'Green'][Math.floor(Math.random() * 4)]
 
   const createData = await graphql(
@@ -132,4 +204,22 @@ export async function POST(req, res) {
     product,
     variant: variantData.productVariantsBulkUpdate.productVariants,
   })
+}
+
+// Route billing actions: check status, cancel, or create subscription.
+async function handleBilling(req, res) {
+  const { action, interval, id } = req.body
+  const { billing } = await authenticate(req, res)
+
+  if (action === 'billing.check') return res.json(await billing.check())
+  if (action === 'billing.cancel') return res.json(await billing.cancel(id))
+
+  const plans = {
+    monthly: { name: 'Demo Monthly', price: 5.00, interval: BillingInterval.Monthly, trialDays: 7, test: true },
+    annual:  { name: 'Demo Annual',  price: 50.00, interval: BillingInterval.Annual,  trialDays: 7, test: true },
+    oneTime: { name: 'Demo Feature', price: 10.00, interval: BillingInterval.OneTime, test: true },
+  }
+  const plan = plans[interval]
+  if (!plan) return res.status(400).json({ error: 'Invalid interval' })
+  res.json(await billing.require(plan))
 }
