@@ -8,7 +8,8 @@
     "meowapps": "./scripts/meowapps.js"
   },
   "scripts": {
-    "test": "node scripts/dev.js"
+    "test": "node scripts/dev.js",
+    "claude": "node scripts/claude.js"
   },
   "dependencies": {
     "@shopify/shopify-api": "^12.3.0",

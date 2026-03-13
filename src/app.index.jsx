@@ -152,14 +152,14 @@ export default function Index() {
       setBillingLoading(false)
     }
   }
-}
 
-function rpc(body) {
-  return fetch('/app.rpc', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then(r => r.json())
+  function rpc(body) {
+    return fetch('/app.rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json())
+  }
 }
 
 // --- rpc -------------------------------------------------------------------
@@ -216,7 +216,7 @@ async function handleBilling(req, res) {
 
   const plans = {
     monthly: { name: 'Demo Monthly', price: 5.00, interval: BillingInterval.Monthly, trialDays: 7, test: true },
-    annual:  { name: 'Demo Annual',  price: 50.00, interval: BillingInterval.Annual,  trialDays: 7, test: true },
+    annual: { name: 'Demo Annual', price: 50.00, interval: BillingInterval.Annual, trialDays: 7, test: true },
     oneTime: { name: 'Demo Feature', price: 10.00, interval: BillingInterval.OneTime, test: true },
   }
   const plan = plans[interval]
