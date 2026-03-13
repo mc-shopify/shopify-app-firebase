@@ -9,6 +9,7 @@ const { status } = spawnSync('claude', [
   '--append-system-prompt-file', `${claude}/CLAUDE.md`,
   '--mcp-config', `${claude}/mcp.json`,
   '--settings', `${claude}/settings.json`,
+  '--add-dir', pkg,
   ...process.argv.slice(2),
-], { stdio: 'inherit' })
+], { stdio: 'inherit', env: { ...process.env, CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1' } })
 process.exit(status ?? 1)
