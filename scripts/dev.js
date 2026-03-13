@@ -67,14 +67,16 @@ function watch(handlers) {
   })
 }
 
-// Managed spawn: tracks child processes and kills them all on SIGINT
+// Managed spawn: detached process group so kill(-pid) cleans up all descendants
 function start(...args) {
-  const p = spawn(...args)
+  const [cmd, cmdArgs, opts = {}] = args
+  const p = spawn(cmd, cmdArgs, { ...opts, detached: true })
   children.push(p)
   return p
 }
 process.on('SIGINT', () => {
   console.log('\nShutting down...')
-  children.forEach(p => p.kill())
-  Promise.all(children.map(p => new Promise(r => p.on('close', r)))).then(() => process.exit())
+  // Kill entire process group (pid + all descendants) per child
+  children.forEach(p => { try { process.kill(-p.pid) } catch {} })
+  setTimeout(() => process.exit(), 2000)
 })
