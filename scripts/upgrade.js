@@ -72,10 +72,14 @@ for (const f of templateFiles) {
     execSync(`git merge-file "${ours}" "${baseFile}" "${theirs}"`, { stdio: 'pipe' })
     console.log(`↑ ${f}`)
     applied++
-  } catch (e) {
-    if (e.status > 0) {
+  } catch {
+    // git merge-file exits > 0 for both auto-merged and conflicted — check for markers
+    if (fs.readFileSync(ours, 'utf8').includes('<<<<<<<')) {
       console.log(`✖ ${f} — conflict, resolve manually`)
       conflicts++
+    } else {
+      console.log(`↑ ${f}`)
+      applied++
     }
   } finally {
     if (fs.existsSync(baseFile)) fs.unlinkSync(baseFile)
