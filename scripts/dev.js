@@ -1,82 +1,33 @@
 #!/usr/bin/env node
 import { spawn, execSync } from 'child_process'
 import fs from 'fs'
-import { parse, stringify } from 'smol-toml'
 import { builder } from './build.js'
 
-const { dist, handlers, port, tomlPath } = builder.config()
+const { dist, handlers } = builder.config()
 
-const steps = [
-  ['Starting tunnel...', () => tunnel(port)],
-  ['Updating shopify.app.toml...', url => updateToml(tomlPath, url)],
-  ['Deploying Shopify app config...', () => execSync('shopify app deploy --force', { stdio: 'inherit' })],
-  ['Building...', () => execSync(`node ${import.meta.dirname}/build.js`, { stdio: 'inherit' })],
-  ['Installing deps in dist...', () => { if (!fs.existsSync(`${dist}/node_modules`)) execSync('npm i', { cwd: dist, stdio: 'inherit' }) }],
-  ['Getting SHOPIFY_API_SECRET...', () => getSecret()],
-  ['Starting emulators + watching src...', secret => {
-    start('npm', ['run', 'dev'], { cwd: dist, stdio: 'inherit', env: { ...process.env, SHOPIFY_API_SECRET: secret } })
-    watch(handlers)
-  }],
-  fs.existsSync('extensions') && ['Starting extensions dev...', () => start('shopify', ['app', 'dev', '--no-update'], { stdio: 'inherit' })],
-].filter(Boolean)
-
-let result, children = []
-for (let i = 0; i < steps.length; i++) {
-  console.log(`\n\x1b[1m[${i + 1}/${steps.length}] ${steps[i][0]}\x1b[0m`)
-  result = await steps[i][1](result)
+// Build app, install deps, start emulators, watch for changes
+execSync(`node ${import.meta.dirname}/build.js`, { stdio: 'inherit' })
+execSync('npm i', { cwd: dist, stdio: 'pipe' })
+const emu = spawn('npm', ['run', 'dev', '--', '--log-verbosity', 'SILENT'], { cwd: dist, stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
+// Skip startup noise, pass through runtime logs after Issues? line
+let passthrough = false
+const filter = chunk => {
+  for (const line of chunk.toString().split('\n')) {
+    if (!line.trim()) continue
+    if (line.includes('Issues?')) { passthrough = true; continue }
+    if (passthrough && !/Using node@|Serving at port/.test(line)) process.stdout.write(line.replace(/\[.*?\]\s*/g, '') + '\n')
+  }
 }
+emu.stdout.on('data', filter)
+emu.stderr.on('data', filter)
+watch(handlers)
 
 // ---------------------------------------------------------------------------
-
-// Spawn cloudflared and resolve once it prints the tunnel URL
-function tunnel(port) {
-  return new Promise((resolve, reject) => {
-    const p = start('cloudflared', ['tunnel', '--url', `http://localhost:${port}`], { stdio: ['ignore', 'pipe', 'pipe'] })
-    const onData = chunk => {
-      const m = chunk.toString().match(/https:\/\/[^\s]+\.trycloudflare\.com/)
-      if (m) { console.log(`Tunnel: ${m[0]}`); resolve(m[0]) }
-    }
-    p.stdout.on('data', onData)
-    p.stderr.on('data', onData)
-    p.on('error', reject)
-  })
-}
-
-// Replace the old tunnel origin in all URL fields, keeping pathnames intact
-function updateToml(tomlPath, url) {
-  const config = parse(fs.readFileSync(tomlPath, 'utf8'))
-  const reurl = u => url + new URL(u).pathname
-  config.application_url = reurl(config.application_url)
-  config.webhooks.subscriptions.forEach(s => { s.uri = reurl(s.uri) })
-  config.auth.redirect_urls = config.auth.redirect_urls.map(reurl)
-  fs.writeFileSync(tomlPath, stringify(config))
-}
-
-// May prompt for Shopify login if not authenticated
-function getSecret() {
-  const out = execSync('shopify app env show', { encoding: 'utf8', stdio: ['inherit', 'pipe', 'inherit'] })
-  return out.match(/SHOPIFY_API_SECRET=(\S+)/)?.[1] || ''
-}
 
 // Rebuild individual files on change — only files matching handler patterns
 function watch(handlers) {
   fs.watch('src', (_, f) => {
     if (!f || !handlers.some(h => f.startsWith(h.type + '.') && f.endsWith(h.ext))) return
-    console.log(`Changed: src/${f}`)
     execSync(`node ${import.meta.dirname}/build.js src/${f}`, { stdio: 'inherit' })
   })
 }
-
-// Managed spawn: detached process group so kill(-pid) cleans up all descendants
-function start(...args) {
-  const [cmd, cmdArgs, opts = {}] = args
-  const p = spawn(cmd, cmdArgs, { ...opts, detached: true })
-  children.push(p)
-  return p
-}
-process.on('SIGINT', () => {
-  console.log('\nShutting down...')
-  // Kill entire process group (pid + all descendants) per child
-  children.forEach(p => { try { process.kill(-p.pid) } catch {} })
-  setTimeout(() => process.exit(), 2000)
-})

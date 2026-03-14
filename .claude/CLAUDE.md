@@ -15,7 +15,7 @@ Use Shopify MCP tools (`search_docs_chunks`, `learn_shopify_api`, `introspect_gr
 ### 1. Declarative config over imperative setup
 Chainable builder APIs. Config reads as declaration.
 ```js
-createBuild().dist('dist').env('shopify.app.toml').handlers([...]).run(args)
+createBuild().dist(...).env(...).handlers([...]).run(args)
 ```
 
 ### 2. Functions derive paths internally

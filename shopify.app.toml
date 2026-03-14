@@ -1,6 +1,6 @@
 client_id = "6b6bfd7d96d842a9dcf30c23b894c683"
 name = "meowapps-template"
-application_url = "https://lat-discuss-helena-certified.trycloudflare.com/app"
+application_url = "https://demo-meowapps.web.app/app"
 embedded = true
 
 [webhooks]
@@ -9,13 +9,16 @@ api_version = "2026-01"
 [[webhooks.subscriptions]]
 topics = [ "app/uninstalled", "app/scopes_update" ]
 compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
-uri = "https://lat-discuss-helena-certified.trycloudflare.com/api/webhook"
+uri = "https://demo-meowapps.web.app/api/webhook"
 
 [access_scopes]
 scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://lat-discuss-helena-certified.trycloudflare.com/api/auth/callback" ]
+redirect_urls = [ "https://demo-meowapps.web.app/api/auth/callback" ]
 
 [access.admin]
 embedded_app_direct_api_access = true
+
+[build]
+automatically_update_urls_on_dev = true

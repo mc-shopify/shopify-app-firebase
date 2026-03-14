@@ -14,6 +14,7 @@
   "dependencies": {
     "@shopify/shopify-api": "^12.3.0",
     "@shopify/shopify-app-express": "^6.0.5",
+    "conf": "^15.1.0",
     "esbuild": "^0.27.3",
     "firebase-admin": "^13.7.0",
     "react-dom": "^19.2.4",

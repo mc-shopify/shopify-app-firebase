@@ -1,0 +1,6 @@
+roles = ["frontend"]
+port = 3000
+
+[commands]
+dev = "npx meowapps dev"
+build = "npx meowapps build"

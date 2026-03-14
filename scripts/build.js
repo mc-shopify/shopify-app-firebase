@@ -1,15 +1,16 @@
 #!/usr/bin/env node
+import Conf from 'conf'
 import esbuild from 'esbuild'
+import { parse } from 'smol-toml'
 import fs from 'fs'
 import path from 'path'
 import { METHODS } from 'node:http'
-import { parse } from 'smol-toml'
 import { pathToFileURL } from 'url'
 
 // Exported so other scripts (dev.js) can query config like handlers and port
 export const builder = createBuild()
   .dist('dist')
-  .env('shopify.app.toml')
+  .env(getConfigFile())
   .handlers([
     { prefix: '/', type: 'page', ext: '.jsx' },
     { prefix: '/app', type: 'app', ext: '.jsx', headScripts: ['https://cdn.shopify.com/shopifycloud/app-bridge.js', 'https://cdn.shopify.com/shopifycloud/polaris.js'] },
@@ -17,10 +18,10 @@ export const builder = createBuild()
   ])
   .firebase({
     node: '22',
-    deps: { 'express': '^5.2.1', 'firebase-functions': '^7.1.0' },
+    deps: { 'express': '^5.2.1', 'firebase-admin': '^13.7.0', 'firebase-functions': '^7.1.0' },
     root: { 'firebase-tools': '^15.9.0' },
   })
-  .port(3000)
+  .port(getWebPort())
 
 // Skip when imported by other scripts (e.g. dev.js), realpathSync resolves bin symlinks
 if (import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) builder.run(process.argv.slice(2))
@@ -31,18 +32,17 @@ if (import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) bu
 // Resolves each target: directory/wildcard spawn child processes per file,
 // plain file builds directly with all registered files.
 function createBuild() {
-  const c = { dist: null, tomlPath: null, env: {}, handlers: [], fb: null, port: null }
+  const c = { dist: null, env: {}, handlers: [], fb: null, port: null }
 
   return {
     dist(v) { c.dist = v; return this },
-    env(tomlPath) {
-      c.tomlPath = tomlPath
+    env(configFile) {
       // Parse shopify TOML at config time, extract env vars needed by client and server
-      const config = parse(fs.readFileSync(tomlPath, 'utf8'))
+      const config = parse(fs.readFileSync(configFile, 'utf8'))
       c.env = {
         SHOPIFY_API_KEY: config.client_id || '',
         SHOPIFY_SCOPES: config.access_scopes?.scopes || '',
-        SHOPIFY_HOST_NAME: config.application_url ? new URL(config.application_url).hostname : '',
+        SHOPIFY_HOST_NAME: process.env.HOST ? new URL(process.env.HOST).hostname : (config.application_url ? new URL(config.application_url).hostname : ''),
       }
       return this
     },
@@ -68,7 +68,7 @@ function createBuild() {
           // Directory: collect files matching handler patterns
           const dirFiles = fs.readdirSync(abs)
           for (const h of c.handlers)
-            all.push(...dirFiles.filter(f => f.startsWith(h.type + '.') && f.endsWith(h.ext)).map(f => path.join(abs, f)))
+            all.push(...dirFiles.filter(f => f.startsWith(h.type + '.') && !f.startsWith(h.type + '._') && f.endsWith(h.ext)).map(f => path.join(abs, f)))
         } else if (fs.existsSync(abs)) {
           all.push(abs)
         } else {
@@ -80,6 +80,7 @@ function createBuild() {
       if (!files.length) return
       // Register all resolved files, then build once with full registry
       await buildAll(c, registry(c, files))
+      for (const f of files) console.log(`Built ${path.basename(f)}`)
     },
   }
 }
@@ -95,7 +96,6 @@ async function buildAll(c, files) {
     bundleClient(c, routes),
     bundleServer(c, routes),
   ])
-  console.log(`Built ${routes.length} routes`)
 }
 
 // --- scan ------------------------------------------------------------------
@@ -210,7 +210,7 @@ async function bundleClient(c, routes) {
     fs.writeFileSync(htmlPath, `<!DOCTYPE html>
 <html lang="en"><head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${meta.title || 'App'}</title>${meta.description ? `\n  <meta name="description" content="${meta.description}">` : ''}${h.type === 'app' ? `\n  <meta name="robots" content="noindex">` : ''}${c.env.SHOPIFY_API_KEY && h.type === 'app' ? `\n  <meta name="shopify-api-key" content="${c.env.SHOPIFY_API_KEY}" />` : ''}${scripts}
+  <title>${meta.title || 'App'}</title>${meta.description ? `\n  <meta name="description" content="${meta.description}">` : ''}${h.type === 'app' ? `\n  <meta name="robots" content="noindex">` : ''}${c.env.SHOPIFY_API_KEY && h.type === 'app' ? `\n  <meta name="shopify-api-key" content="${c.env.SHOPIFY_API_KEY}" />` : ''}${h.type === 'page' ? `\n  <script>if(self!==top)location.replace('/app'+location.search)</script>` : ''}${scripts}
 </head><body>
   <div id="root"></div>
   <script type="module" src="/assets/${entryMap[h.type]}"></script>
@@ -310,4 +310,16 @@ function registry(c, adds) {
     fs.writeFileSync(p, JSON.stringify(reg))
   }
   return reg
+}
+
+// Resolve Shopify app config file from CLI cache
+function getConfigFile() {
+  const cached = new Conf({ projectName: 'shopify-cli-app' }).get(process.cwd())
+  if (!cached?.configFile) throw new Error('No Shopify app config found. Run "shopify app dev" or "shopify app build" first.')
+  return cached.configFile
+}
+
+// Read port from shopify.web.toml
+function getWebPort() {
+  return parse(fs.readFileSync('shopify.web.toml', 'utf8')).port
 }
