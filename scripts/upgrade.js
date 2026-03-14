@@ -29,7 +29,7 @@ if (baseSha === latestSha) {
 // Apply template diff with native 3-way merge
 const from = baseSha || execSync('git mktree < /dev/null', { encoding: 'utf8' }).trim()
 try {
-  execSync(`git diff ${from} ${latestSha} -- ':!package-lock.json' | git apply --3way`, { stdio: 'inherit' })
+  execSync(`git diff ${from} ${latestSha} -- ':!package-lock.json' | git apply --3way --allow-empty`, { stdio: 'inherit' })
 } catch {
   // git apply --3way exits non-zero on conflicts but still writes markers
 }
