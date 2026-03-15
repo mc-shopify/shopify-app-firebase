@@ -38,7 +38,7 @@ jobs:
             "private": true,
             "scripts": {
               "dev": "meowapps dev",
-              "deploy": "shopify app deploy && meowapps deploy",
+              "deploy": "meowapps deploy",
               "claude": "meowapps claude",
               "upgrade": "meowapps upgrade"
             },
