@@ -87,23 +87,20 @@ function createBuild() {
 
 // --- build -----------------------------------------------------------------
 
-// Orchestrates a full build: scan all registered files,
-// then bundle client and server in parallel (each self-contained).
+// Scan all registered files, then bundle client and server in parallel.
 async function buildAll(c, files) {
-  const routes = await scanRoutes(c, files)
+  const { routes, layouts } = await scanFiles(c, files)
 
   await Promise.all([
-    bundleClient(c, routes),
-    bundleServer(c, routes),
+    bundleClient(c, { routes, layouts }),
+    bundleServer(c, { routes }),
   ])
 }
 
 // --- scan ------------------------------------------------------------------
 
-// Transform each source file to extract exported meta and HTTP methods,
-// then match files to handlers by filename convention (e.g. app.index.jsx → /app handler).
-// Returns route objects with: file, name, url, handler, meta, methods.
-async function scanRoutes(c, files) {
+// Scan source files to extract routes with server paths and layout map per handler type.
+async function scanFiles(c, files) {
   const scanned = Object.fromEntries(await Promise.all(files.map(async f => {
     const ext = path.extname(f)
     // Transform to CJS so we can evaluate exports without importing the module
@@ -114,7 +111,7 @@ async function scanRoutes(c, files) {
     return [f, { meta: m.exports.meta || {}, methods: METHODS.filter(v => typeof m.exports[v] === 'function') }]
   })))
 
-  return c.handlers.flatMap(h =>
+  const routes = c.handlers.flatMap(h =>
     files.filter(f => {
       const b = path.basename(f)
       // Skip _layout and other underscore-prefixed files (non-route convention)
@@ -125,17 +122,30 @@ async function scanRoutes(c, files) {
       const name = b.slice(h.type.length + 1, -h.ext.length).replaceAll('.', '/')
       const isIdx = name === 'index'
       const url = isIdx ? h.prefix : h.prefix === '/' ? `/${name}` : `${h.prefix}/${name}`
-      return { file: f, name, url, handler: h, ...scanned[f] }
+      const base = url === '/' ? '/index' : url
+      const serverPaths = scanned[f].methods.map(m => ({
+        method: m,
+        path: h.type === 'api' ? url : m === 'GET' ? `${base}.json` : `${base}.rpc`,
+      }))
+      return { file: f, name, url, handler: h, ...scanned[f], serverPaths }
     })
   )
+
+  const layouts = Object.fromEntries(
+    c.handlers.filter(h => h.type !== 'api').map(h => {
+      const dirs = [...new Set(files.filter(f => path.basename(f).startsWith(h.type + '.')).map(f => path.dirname(f)))]
+      const layout = dirs.reverse().map(d => path.join(d, `${h.type}._layout${h.ext}`)).find(p => fs.existsSync(p)) || null
+      return [h.type, layout]
+    })
+  )
+
+  return { routes, layouts }
 }
 
 // --- client ----------------------------------------------------------------
 
-// Self-contained client build: bundles all non-api routes into SPA entries
-// (one per handler type) with lazy-loaded page components, then writes HTML shells.
-// Output is serveable as-is: hosting/assets/*.js + hosting/**/*.html.
-async function bundleClient(c, routes) {
+// Bundle non-api routes into SPA entries with lazy-loaded pages, then write HTML shells.
+async function bundleClient(c, { routes, layouts }) {
   const groups = Object.groupBy(routes.filter(r => r.handler.type !== 'api'), r => r.handler.type)
   if (!Object.keys(groups).length) return
 
@@ -164,10 +174,7 @@ async function bundleClient(c, routes) {
         const type = a.path.slice(8)
         const rs = groups[type]
         const entries = rs.map(r => `  '${r.url}': () => import('lazy:${r.file}')`).join(',\n')
-        // Detect layout file: {type}._layout{ext} (e.g. app._layout.jsx)
-        const handler = c.handlers.find(h => h.type === type)
-        const layoutPath = path.join(path.dirname(rs[0].file), `${type}._layout${handler.ext}`)
-        const layoutFile = fs.existsSync(layoutPath) ? layoutPath : null
+        const layoutFile = layouts[type]
         const layoutImport = layoutFile ? `import Layout from '${layoutFile}'` : ''
         const wrap = layoutFile ? 'root.render(<Layout><Page/></Layout>)' : 'root.render(<Page/>)'
         return {
@@ -220,24 +227,19 @@ async function bundleClient(c, routes) {
 
 // --- server ----------------------------------------------------------------
 
-// Self-contained server build: generates Express entry point bundling all routes
-// with exported HTTP methods, then writes project files (package.json, firebase config).
-// Output is deployable as-is: functions/index.js + firebase.json + package.json.
-async function bundleServer(c, routes) {
+// Generate Express entry point from routes, then write Firebase project files.
+async function bundleServer(c, { routes }) {
   const functionsDir = `${c.dist}/functions`
   fs.mkdirSync(functionsDir, { recursive: true })
 
   const groups = {}
   routes.forEach((r, i) => {
-    if (!r.methods.length) return
+    if (!r.serverPaths.length) return
     const g = groups[r.handler.type] ??= { imports: [], handlers: [] }
     // Alias each method import with index suffix to avoid name collisions across routes
-    g.imports.push(`import { ${r.methods.map(m => `${m} as ${m}${i}`).join(', ')} } from '${r.file}'`)
-    r.methods.forEach(m => {
-      // Pages/apps: GET as .json (data), mutations as .rpc (avoids static file). APIs use URL directly.
-      const base = r.url === '/' ? '/index' : r.url
-      const sp = r.handler.type === 'api' ? r.url : m === 'GET' ? `${base}.json` : `${base}.rpc`
-      g.handlers.push(`${r.handler.type}App.${m.toLowerCase()}('${sp}', ${m}${i})`)
+    g.imports.push(`import { ${r.serverPaths.map(s => `${s.method} as ${s.method}${i}`).join(', ')} } from '${r.file}'`)
+    r.serverPaths.forEach(s => {
+      g.handlers.push(`${r.handler.type}App.${s.method.toLowerCase()}('${s.path}', ${s.method}${i})`)
     })
   })
 
