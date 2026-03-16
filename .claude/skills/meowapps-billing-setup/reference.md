@@ -238,3 +238,34 @@ topics = [ "app/uninstalled", "app/scopes_update", "app_subscriptions/update" ]
 - After redirect, Shopify returns user to the `returnUrl` configured in the plan (default: `/app`)
 - One-time purchases that are already ACTIVE return `{ active: true, ... }` instead of a new confirmation URL
 - Call `check` on page load to show current billing state
+
+## Extension integration
+
+If the user has checkout/theme extensions that need to know the active plan, the extension reads the `$app:plan` shop metafield synced by the billing module.
+
+### Extension config (`shopify.extension.toml`)
+
+```toml
+[[extensions.metafields]]
+namespace = "$app"
+key = "plan"
+```
+
+### Reading plan in extension code
+
+```jsx
+import { useAppMetafields } from '@shopify/ui-extensions-react/checkout'
+
+function usePlan() {
+  const [planMeta] = useAppMetafields({ namespace: '$app', key: 'plan', type: 'shop' })
+  return planMeta?.metafield?.value ?? null // e.g. "VIECheckout Pro" or null
+}
+```
+
+### Key behaviors
+
+- Must use `$app` format — the fully qualified `app--{id}--{namespace}` format is NOT supported in extensions
+- The metafield value is the subscription `name` from the `plans` config (e.g. `"Demo Monthly"`)
+- If no active subscription, the metafield is deleted — `usePlan()` returns `null`
+- `APP_SUBSCRIPTIONS_UPDATE` webhook keeps metafield in sync when subscription changes outside the app
+- Available from API version `2025-04`+

@@ -5,11 +5,18 @@ description: Review or refactor code against meowapps coding style rules (rules 
 
 Read `reference.md` from the same directory as this SKILL.md file. It contains all coding style rules with examples.
 
-If no files specified, ask the user which files to review or refactor.
+## Step 1 — Understand scope
 
-## Mode: review (default)
+If no files specified, ask:
+- Which files to review or refactor?
+- All rules or specific rules? (e.g. "only check rule 11 and 13")
+- Review mode (report + approve) or apply mode (fix directly)?
 
-Read each file. Check every rule (1-13) and every convention from reference.md. Only flag violations of listed rules and conventions — not general code quality or linting.
+Read the specified files first. If the user gives a directory, list its contents and confirm which files to include.
+
+## Step 2 — Review
+
+Check every rule (1-13) and every convention from reference.md against each file. Only flag violations of listed rules and conventions — not general code quality or linting.
 
 If no violations: report that files pass all style checks and stop.
 
@@ -21,12 +28,16 @@ For each violation:
 3. What's wrong (one line)
 4. Proposed fix
 
-Wait for the user to approve or adjust before making changes.
+Ask the user:
+- Do these findings look correct? Any false positives?
+- Approve all fixes, adjust, or skip specific ones?
+
+Wait for approval before making changes.
+
+## Step 3 — Fix
 
 After approval, fix violations file by file. Verify each file before moving to the next.
 
-## Mode: apply
-
-User asks to refactor or rewrite code to match style. Read the target files, identify all style violations, apply fixes, and report what changed. No approval step needed — the user already asked for the refactor.
+If in apply mode (user explicitly asked to refactor/apply): skip the approval step in Step 2 — apply fixes directly and report what changed. But still ask: should I only fix style violations, or also restructure code to better follow call flow (rule 10)?
 
 $ARGUMENTS

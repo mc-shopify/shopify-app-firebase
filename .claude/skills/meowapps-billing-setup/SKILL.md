@@ -5,18 +5,25 @@ description: Guide for adding Shopify billing (subscriptions, one-time purchases
 
 ## Step 1 — Understand the project
 
-Read the user's `src/` directory listing and `shopify.app.toml`.
+Read the user's `src/` directory listing, `shopify.app.toml`, and `extensions/` if it exists.
 Check if `src/api.billing.js` or `src/api.webhook.js` already exists.
+Summarize what you found (existing pages, extensions, webhook topics) and confirm with the user before proceeding.
 
 ## Step 2 — Gather requirements
 
-Ask the user:
+Ask the user these questions. Do NOT proceed until all answers are clear enough to fully implement.
 
-1. **Plans**: What plans do you need? Provide name, price, interval (monthly/annual/one-time), and trial days for each. If unsure, offer to use placeholder plans they can customize later.
-2. **Extension support**: Do checkout/theme extensions need to know the active plan? If yes, `$app:plan` metafield sync via `APP_SUBSCRIPTIONS_UPDATE` webhook will be included. (Default: yes)
-3. **Billing UI**: Do you want a billing UI section? If yes, which page — existing or new `app.billing.jsx`?
+1. **Plans**: What plans do you need? For each: name, price, interval (monthly/annual/one-time), and trial days. If unsure, offer placeholder plans.
+   - Follow up: currency if not USD? Custom `returnUrl` after payment (default: `/app`)?
+   - If trial days > 0: what should happen during trial? Feature gating? Badge/watermark? Or full access?
+2. **Extension support**: Do checkout/theme extensions need to know the active plan?
+   - If yes: do you already have extensions? List the extension directories (e.g. `extensions/checkout-ui/`). Read the extension's `shopify.extension.toml` and source code to understand what it does and where to add plan-reading logic. Ask: what should the extension do differently based on the plan?
+   - If no extensions yet: only set up server-side metafield sync. Note that extension integration can be added later.
+3. **Billing UI**: Do you want a billing page? If yes: which page (existing or new `app.billing.jsx`)?
+   - Read that page first to understand its current structure.
+   - Follow up: what should the UI show? Plan details, trial status, cancel button? How should it look for free/trial vs paid users?
 
-If user provides plans via $ARGUMENTS, parse them and skip question 1.
+If user provides plans via $ARGUMENTS, parse them and skip question 1. Still ask questions 2 and 3.
 
 ## Step 3 — Plan
 
@@ -26,6 +33,7 @@ Present what will be created/modified and wait for approval:
 - **Copy + modify** `src/api.webhook.js` — only if extension support. This file lives in the meowapps package by default (`node_modules/meowapps/src/api.webhook.js`). User must copy it to `src/` to override (meowapps build: same basename in user's `src/` wins over package). Copy the entire file to preserve existing handlers, then add the billing webhook handler. If user already has `src/api.webhook.js`, read it and add the handler — do not overwrite.
 - **Modify** `shopify.app.toml` — add `app_subscriptions/update` to existing webhook topics (if extension support). Verify first — add only if missing.
 - **Create/Modify** billing UI page (if requested)
+- **Modify** extension files (if user has extensions) — add `$app` / `plan` metafield to `shopify.extension.toml`, add `useAppMetafields` hook to read plan in extension code. List the exact files and changes.
 
 List the exact plan config that will be used. Wait for approval.
 
@@ -51,6 +59,7 @@ After generating, confirm:
 - [ ] If extension support: `src/api.webhook.js` exists in user's `src/` with all original handlers preserved (APP_UNINSTALLED, APP_SCOPES_UPDATE, GDPR) plus APP_SUBSCRIPTIONS_UPDATE added
 - [ ] If extension support: `shopify.app.toml` has `app_subscriptions/update` in webhook topics
 - [ ] Frontend calls `POST /api/billing` with `{ action: 'check' }`, `{ action: 'cancel', id }`, or `{ interval: 'monthly' }` (subscribe has no action field — falls through to require)
+- [ ] If extension support + user has extensions: `shopify.extension.toml` declares `$app` / `plan` metafield, extension code reads it via `useAppMetafields`
 - [ ] No billing code references `src/lib/shopify.js`
 
 ## Key knowledge
