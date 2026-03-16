@@ -286,7 +286,7 @@ async function bundleServer(c, { routes }) {
     hosting: { public: 'hosting', ignore: ['firebase.json', '**/node_modules/**'], cleanUrls: true, trailingSlash: false, rewrites },
     functions: { source: 'functions', runtime: `nodejs${c.fb.node}` },
     firestore: { rules: 'firestore.rules' },
-    emulators: { hosting: { port: c.port } },
+    emulators: { hosting: { port: c.port }, functions: { port: c.port + 1 }, firestore: { port: c.port + 2 } },
   })
 
   w(`${c.dist}/firestore.rules`, 'rules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{document=**} {\n      allow read, write: if true;\n    }\n  }\n}\n')
