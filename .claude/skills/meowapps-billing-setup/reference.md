@@ -74,9 +74,9 @@ function createBilling(shop, graphql) {
           metafieldsSet(metafields: $metafields) { metafields { id } userErrors { field message } }
         }`, { metafields: [{ namespace: '$app', key: 'plan', value: planName, type: 'single_line_text_field', ownerId: data.shop.id }] })
       } else if (!planName && planMeta) {
-        await graphql(`mutation ($input: MetafieldDeleteInput!) {
-          metafieldDelete(input: $input) { deletedId userErrors { field message } }
-        }`, { input: { id: planMeta.id } })
+        await graphql(`mutation ($metafields: [MetafieldIdentifierInput!]!) {
+          metafieldsDelete(metafields: $metafields) { deletedMetafields { ownerId namespace key } userErrors { field message } }
+        }`, { metafields: [{ ownerId: data.shop.id, namespace: '$app', key: 'plan' }] })
       }
 
       if (!subs.length) return { active: false, plan: null }
