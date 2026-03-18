@@ -6,7 +6,7 @@ const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const claude = resolve(pkg, '.claude')
 
 const { status } = spawnSync('claude', [
-  '--append-system-prompt-file', `${claude}/CLAUDE.md`,
+  '--append-system-prompt-file', `${claude}/developer.md`,
   '--mcp-config', `${claude}/mcp.json`,
   '--settings', `${claude}/settings.json`,
   '--add-dir', pkg,

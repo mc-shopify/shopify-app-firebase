@@ -1,79 +1,301 @@
 ---
-name: meowapps-billing-setup
-description: Guide for adding Shopify billing (subscriptions, one-time purchases) to your app. Provides tested canonical code and Shopify billing knowledge.
+description: Add Shopify billing (subscriptions, one-time purchases) to your app. Provides tested canonical code and Shopify billing domain knowledge.
 ---
 
-## Step 1 — Understand the project
+## What
 
-Read the user's `src/` directory listing, `shopify.app.toml`, and `extensions/` if it exists.
-Check if `src/api.billing.js` or `src/api.webhook.js` already exists.
-Summarize what you found (existing pages, extensions, webhook topics) and confirm with the user before proceeding.
+Add Shopify billing (subscriptions, one-time purchases) to an app. Provides tested canonical code and Shopify billing domain knowledge.
 
-## Step 2 — Gather requirements
+## Why
 
-Ask the user these questions. Do NOT proceed until all answers are clear enough to fully implement.
+Billing is security-sensitive and API-heavy. The canonical code below handles GraphQL queries, metafield sync, dev store detection, and webhook integration correctly. Shopify has no API for extensions to query billing — the `$app:plan` metafield is the only way to pass plan state to checkout/theme extensions.
 
-1. **Plans**: What plans do you need? For each: name, price, interval (monthly/annual/one-time), and trial days. If unsure, offer placeholder plans.
-   - Follow up: currency if not USD? Custom `returnUrl` after payment (default: `/app`)?
-   - If trial days > 0: what should happen during trial? Feature gating? Badge/watermark? Or full access?
-2. **Extension support**: Do checkout/theme extensions need to know the active plan?
-   - If yes: do you already have extensions? List the extension directories (e.g. `extensions/checkout-ui/`). Read the extension's `shopify.extension.toml` and source code to understand what it does and where to add plan-reading logic. Ask: what should the extension do differently based on the plan?
-   - If no extensions yet: only set up server-side metafield sync. Note that extension integration can be added later.
-3. **Billing UI**: Do you want a billing page? If yes: which page (existing or new `app.billing.jsx`)?
-   - Read that page first to understand its current structure.
-   - Follow up: what should the UI show? Plan details, trial status, cancel button? How should it look for free/trial vs paid users?
+## Who
 
-If user provides plans via $ARGUMENTS, parse them and skip question 1. Still ask questions 2 and 3.
+App developers adding billing for the first time, or integrating billing with extensions.
 
-## Step 3 — Plan
+## When
 
-Present what will be created/modified and wait for approval:
+When adding billing, updating plans, or connecting billing state to checkout/theme extensions.
 
-- **Create** `src/api.billing.js` — standalone billing API route (always)
-- **Copy + modify** `src/api.webhook.js` — only if extension support. This file lives in the meowapps package by default (`node_modules/meowapps/src/api.webhook.js`). User must copy it to `src/` to override (meowapps build: same basename in user's `src/` wins over package). Copy the entire file to preserve existing handlers, then add the billing webhook handler. If user already has `src/api.webhook.js`, read it and add the handler — do not overwrite.
-- **Modify** `shopify.app.toml` — add `app_subscriptions/update` to existing webhook topics (if extension support). Verify first — add only if missing.
-- **Create/Modify** billing UI page (if requested)
-- **Modify** extension files (if user has extensions) — add `$app` / `plan` metafield to `shopify.extension.toml`, add `useAppMetafields` hook to read plan in extension code. List the exact files and changes.
+## Where
 
-List the exact plan config that will be used. Wait for approval.
+- `src/api.billing.js` — billing module (always created)
+- `src/api.webhook.js` — webhook integration (only if extensions need plan awareness)
+- `shopify.app.toml` — webhook topic registration
+- Extension files — if user has extensions that need the active plan
 
-## Step 4 — Generate
+## How
 
-Read `reference.md` from the same directory as this SKILL.md file for canonical tested code. Use it as the source of truth.
+### Gather requirements
 
-Rules:
-- Copy the reference code structure exactly — only change the `plans` config to match user requirements. Remove plan keys the user didn't request (e.g. remove `oneTime` if they only want subscriptions)
-- If no extension support: remove `export { checkBilling }`, the `checkBilling` function, and `authenticateOffline` from the import. Only import `{ authenticate }`
-- `api.billing.js` is standalone. It imports from `'meowapps'` only
-- For webhook: read the package's file first via `node_modules/meowapps/src/api.webhook.js`, copy to user's `src/api.webhook.js`, then add `checkBilling` import from `'./api.billing.js'` and `APP_SUBSCRIPTIONS_UPDATE` handler
-- If user already has `src/api.webhook.js`, check if `APP_SUBSCRIPTIONS_UPDATE` already exists — add only if missing
-- `shopify.app.toml`: append `app_subscriptions/update` to the existing topics array — do not replace other topics
-- Never mention or modify `src/lib/shopify.js` — that is internal to the meowapps package
-- Follow all meowapps coding style rules from the system prompt
+Ask these questions. Do NOT proceed until answers are clear enough to fully implement.
 
-## Step 5 — Verify
+1. **Plans**: name, price, interval (monthly/annual/one-time), trial days for each plan.
+2. **Extension support**: do checkout/theme extensions need to know the active plan?
+3. **Billing UI**: do you want a billing page? Which page?
 
-After generating, confirm:
-- [ ] `src/api.billing.js` exists with correct plans config
-- [ ] `src/api.billing.js` imports only from `'meowapps'`, no other local imports
-- [ ] If extension support: `src/api.webhook.js` exists in user's `src/` with all original handlers preserved (APP_UNINSTALLED, APP_SCOPES_UPDATE, GDPR) plus APP_SUBSCRIPTIONS_UPDATE added
-- [ ] If extension support: `shopify.app.toml` has `app_subscriptions/update` in webhook topics
-- [ ] Frontend calls `POST /api/billing` with `{ action: 'check' }`, `{ action: 'cancel', id }`, or `{ interval: 'monthly' }` (subscribe has no action field — falls through to require)
-- [ ] If extension support + user has extensions: `shopify.extension.toml` declares `$app` / `plan` metafield, extension code reads it via `useAppMetafields`
-- [ ] No billing code references `src/lib/shopify.js`
+If user provides plans via $ARGUMENTS, parse them and skip question 1.
 
-## Key knowledge
+### Present plan and get approval
 
-- Shopify has NO API for extensions to query billing — `$app:plan` metafield (namespace `$app`, key `plan`) is the ONLY way to pass plan state to checkout/theme extensions.
-- `check()` always syncs this metafield: sets it to the active subscription name, or deletes it if no subscription. This is built into the billing module.
-- `APP_SUBSCRIPTIONS_UPDATE` webhook triggers `checkBilling` to keep the metafield in sync when subscription changes outside the app (e.g. merchant cancels from Shopify admin).
-- `authenticateOffline(shop)` creates a GraphQL client from stored offline session. Used by `checkBilling` because webhooks only provide a shop domain, not an authenticated HTTP request.
-- `devStore` detection auto-enables `test: true` on partner development stores so billing works in dev without real charges.
+List what will be created/modified with the exact plan config. Wait for approval.
+
+### Canonical code — `src/api.billing.js`
+
+Tested, working code. Only change the `plans` config.
+
+If no extension support: remove `export { checkBilling }`, the `checkBilling` function, and the `authenticateOffline` import.
+
+```js
+import { authenticate, authenticateOffline } from 'meowapps'
+
+export { checkBilling }
+
+const BillingInterval = Object.freeze({
+  Monthly: 'EVERY_30_DAYS',
+  Annual: 'ANNUAL',
+  OneTime: 'ONE_TIME',
+})
+
+const plans = {
+  // --- CUSTOMIZE PLANS HERE ---
+  monthly: { name: 'Demo Monthly', price: 5.00, interval: BillingInterval.Monthly, trialDays: 7 },
+  annual: { name: 'Demo Annual', price: 50.00, interval: BillingInterval.Annual, trialDays: 7 },
+  oneTime: { name: 'Demo Feature', price: 10.00, interval: BillingInterval.OneTime },
+}
+
+// Route billing actions: check status, cancel, or create subscription.
+export async function POST(req, res) {
+  const { action, interval, id } = req.body || {}
+  const { session, graphql } = await authenticate(req, res)
+  const billing = createBilling(session.shop, graphql)
+
+  if (action === 'check') return res.json(await billing.check())
+  if (action === 'cancel') return res.json(await billing.cancel(id))
+
+  const plan = plans[interval]
+  if (!plan) return res.status(400).json({ error: 'Invalid interval' })
+  res.json(await billing.require(plan))
+}
+
+// Sync $app:plan metafield for a shop (used by webhook handler).
+async function checkBilling(shop) {
+  const { graphql } = await authenticateOffline(shop)
+  const billing = createBilling(shop, graphql)
+  await billing.check()
+}
+
+// --- billing ---------------------------------------------------------------
+
+// Billing helpers scoped to a shop. Supports subscriptions and one-time purchases.
+// check() syncs $app:plan metafield so checkout extensions can read the active plan.
+function createBilling(shop, graphql) {
+  const storeHandle = shop.replace('.myshopify.com', '')
+  const url = (path) => `https://admin.shopify.com/store/${storeHandle}/apps/${process.env.SHOPIFY_API_KEY}${path}`
+  let devStore = null
+
+  return {
+    // Query Shopify for active subscription and sync $app:plan metafield.
+    async check() {
+      const data = await graphql(`query { currentAppInstallation { activeSubscriptions {
+        id name status test trialDays createdAt currentPeriodEnd
+        lineItems { plan { pricingDetails {
+          ... on AppRecurringPricing { price { amount currencyCode } interval }
+        } } }
+      } } shop { id plan { partnerDevelopment } metafield(namespace: "$app", key: "plan") { id value } } }`)
+
+      devStore = data.shop?.plan?.partnerDevelopment ?? false
+
+      const subs = data.currentAppInstallation?.activeSubscriptions || []
+      const planMeta = data.shop?.metafield
+      const planName = subs.length ? subs[0].name : null
+
+      // Sync metafield to match billing state
+      if (planName && planMeta?.value !== planName) {
+        await graphql(`mutation ($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) { metafields { id } userErrors { field message } }
+        }`, { metafields: [{ namespace: '$app', key: 'plan', value: planName, type: 'single_line_text_field', ownerId: data.shop.id }] })
+      } else if (!planName && planMeta) {
+        await graphql(`mutation ($metafields: [MetafieldIdentifierInput!]!) {
+          metafieldsDelete(metafields: $metafields) { deletedMetafields { ownerId namespace key } userErrors { field message } }
+        }`, { metafields: [{ ownerId: data.shop.id, namespace: '$app', key: 'plan' }] })
+      }
+
+      if (!subs.length) return { active: false, plan: null }
+      return { active: true, plan: planName, ...mapSubscription(subs[0]) }
+    },
+
+    // Ensure active billing exists. Auto-enables test mode on dev stores.
+    async require({ name, price, interval = BillingInterval.Monthly, trialDays = 0, returnUrl = '/app' }) {
+      if (devStore === null) await this.check()
+
+      const test = devStore
+      return interval === BillingInterval.OneTime
+        ? requireOneTime(graphql, { name, price, test, returnUrl: url(returnUrl) })
+        : requireSubscription(graphql, { name, price, interval, trialDays, test, returnUrl: url(returnUrl) })
+    },
+
+    // Cancel active subscription. One-time purchases cannot be cancelled via API.
+    async cancel(id, { prorate = true } = {}) {
+      if (!id.includes('AppSubscription')) return { status: 'CANCELLED' }
+
+      const result = await graphql(`mutation ($id: ID!, $prorate: Boolean) {
+        appSubscriptionCancel(id: $id, prorate: $prorate) {
+          appSubscription { id status }
+          userErrors { field message }
+        }
+      }`, { id, prorate })
+
+      const { userErrors } = result.appSubscriptionCancel
+      if (userErrors?.length) throw new Error(userErrors.map(e => e.message).join(', '))
+      return { status: 'CANCELLED' }
+    },
+  }
+}
+
+// Map Shopify AppSubscription object to a flat record.
+function mapSubscription(s) {
+  const pricing = s.lineItems?.[0]?.plan?.pricingDetails
+  return {
+    type: 'subscription',
+    id: s.id, name: s.name, status: s.status, test: s.test,
+    trialDays: s.trialDays, createdAt: s.createdAt,
+    currentPeriodEnd: s.currentPeriodEnd,
+    price: parseFloat(pricing?.price?.amount || 0),
+  }
+}
+
+// Create a new subscription.
+async function requireSubscription(graphql, { name, price, interval, trialDays, test, returnUrl }) {
+  const result = await graphql(`mutation ($name: String!, $returnUrl: URL!,
+    $lineItems: [AppSubscriptionLineItemInput!]!, $trialDays: Int, $test: Boolean) {
+    appSubscriptionCreate(name: $name, returnUrl: $returnUrl,
+      lineItems: $lineItems, trialDays: $trialDays, test: $test) {
+      confirmationUrl
+      userErrors { field message }
+    }
+  }`, {
+    name, trialDays, test, returnUrl,
+    lineItems: [{
+      plan: {
+        appRecurringPricingDetails: {
+          price: { amount: price, currencyCode: 'USD' },
+          interval,
+        }
+      },
+    }],
+  })
+
+  return extractConfirmation(result.appSubscriptionCreate)
+}
+
+// Query one-time purchases by name, or create a new one.
+async function requireOneTime(graphql, { name, price, test, returnUrl }) {
+  const data = await graphql(`query ($first: Int!) { currentAppInstallation {
+    oneTimePurchases(first: $first, sortKey: CREATED_AT, reverse: true) {
+      nodes { id name status test price { amount currencyCode } createdAt }
+    }
+  } }`, { first: 25 })
+  const match = data.currentAppInstallation?.oneTimePurchases?.nodes
+    ?.find(p => p.name === name && p.status === 'ACTIVE')
+
+  if (match) {
+    return {
+      active: true, type: 'one_time',
+      id: match.id, name: match.name, status: match.status, test: match.test,
+      price: parseFloat(match.price?.amount || 0), createdAt: match.createdAt,
+    }
+  }
+
+  const result = await graphql(`mutation ($name: String!, $price: MoneyInput!, $returnUrl: URL!, $test: Boolean) {
+    appPurchaseOneTimeCreate(name: $name, price: $price, returnUrl: $returnUrl, test: $test) {
+      confirmationUrl
+      userErrors { field message }
+    }
+  }`, { name, test, returnUrl, price: { amount: price, currencyCode: 'USD' } })
+
+  return extractConfirmation(result.appPurchaseOneTimeCreate)
+}
+
+// Extract confirmationUrl or throw on userErrors.
+function extractConfirmation(payload) {
+  if (payload.userErrors?.length) throw new Error(payload.userErrors.map(e => e.message).join(', '))
+  return { active: false, confirmationUrl: payload.confirmationUrl }
+}
+```
+
+### Webhook integration (only if extension support)
+
+Read the user's `src/api.webhook.js`. If it doesn't exist, copy from `node_modules/meowapps/src/api.webhook.js` first. Then add:
+
+**Import:**
+```js
+import { checkBilling } from './api.billing.js'
+```
+
+**Handler registration** — add to `webhookHandlers`:
+```js
+APP_SUBSCRIPTIONS_UPDATE: { callback: handleSubscriptionUpdate },
+```
+
+**Handler function:**
+```js
+// Sync $app:plan metafield when subscription status changes.
+async function handleSubscriptionUpdate(topic, shop) {
+  console.log(`Received ${topic} webhook for ${shop}`)
+  try {
+    await checkBilling(shop)
+  } catch (err) {
+    console.error(`Failed to sync plan for ${shop}:`, err.message)
+  }
+}
+```
+
+**shopify.app.toml** — append to existing webhook topics:
+```toml
+topics = [ "app/uninstalled", "app/scopes_update", "app_subscriptions/update" ]
+```
+
+### Extension integration (only if user has extensions)
+
+**Extension config** (`shopify.extension.toml`):
+```toml
+[[extensions.metafields]]
+namespace = "$app"
+key = "plan"
+```
+
+**Reading plan in extension code:**
+```jsx
+import { useAppMetafields } from '@shopify/ui-extensions-react/checkout'
+
+function usePlan() {
+  const [planMeta] = useAppMetafields({ namespace: '$app', key: 'plan', type: 'shop' })
+  return planMeta?.metafield?.value ?? null
+}
+```
+
+### Frontend API contract
+
+`POST /api/billing` accepts JSON body:
+
+| Action | Request body | Response |
+|---|---|---|
+| Check status | `{ action: 'check' }` | `{ active, plan, type, id, name, status, test, trialDays, createdAt, currentPeriodEnd, price }` or `{ active: false, plan: null }` |
+| Subscribe | `{ interval: 'monthly' }` | `{ active: false, confirmationUrl }` — redirect via `open(url, '_top')` |
+| Buy one-time | `{ interval: 'oneTime' }` | `{ active: false, confirmationUrl }` or `{ active: true, ... }` if already purchased |
+| Cancel | `{ action: 'cancel', id }` | `{ status: 'CANCELLED' }` |
+
+### Domain knowledge
+
+- `$app:plan` metafield is the ONLY way to pass billing state to checkout/theme extensions. Must use `$app` format — fully qualified `app--{id}--{namespace}` is NOT supported in extensions.
+- `check()` syncs the metafield: sets it to the active subscription name, or deletes it if no subscription.
+- `devStore` detection auto-enables `test: true` on partner development stores.
 - One-time purchases cannot be cancelled via API — only subscriptions can.
-- Billing APIs do not require additional OAuth scopes. The `$app` metafield namespace is reserved for app-owned metafields.
-- The `plans` object keys (e.g. `monthly`, `annual`, `oneTime`) are the `interval` values sent from the frontend: `{ interval: 'monthly' }` looks up `plans.monthly`.
-- `$app:plan` metafield reflects active subscription name only. One-time purchases are checked separately via `requireOneTime` and are not synced to the metafield.
-- Price currency is hardcoded to `'USD'`. Change `currencyCode` in `requireSubscription` and `requireOneTime` for other currencies.
-- meowapps build: `node_modules/meowapps/src/` is scanned first, then user's `src/`. Same basename = user wins. This is why `api.webhook.js` must be copied to `src/` to override.
+- Billing APIs do not require additional OAuth scopes.
+- The `plans` keys (e.g. `monthly`, `annual`) are the `interval` values sent from the frontend.
+- Price currency is hardcoded to `'USD'`. Change `currencyCode` for other currencies.
+- The metafield reflects active subscription name only. One-time purchases are not synced to it.
 
 $ARGUMENTS

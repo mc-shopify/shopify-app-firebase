@@ -4,6 +4,9 @@
   "exports": {
     ".": "./src/lib/index.js"
   },
+  "scripts": {
+    "dev": "claude --append-system-prompt-file .claude/maintainer.md"
+  },
   "bin": {
     "meowapps": "./scripts/meowapps.js"
   },
