@@ -5,6 +5,7 @@
     ".": "./src/lib/index.js"
   },
   "scripts": {
+    "build": "node scripts/build.js",
     "dev": "claude --append-system-prompt-file .claude/maintainer.md"
   },
   "bin": {

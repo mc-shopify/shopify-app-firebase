@@ -1,8 +1,7 @@
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { resolve } from 'path'
 import { spawnSync } from 'child_process'
 
-const pkg = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const pkg = resolve(import.meta.dirname, '..')
 const claude = resolve(pkg, '.claude')
 
 const { status } = spawnSync('claude', [

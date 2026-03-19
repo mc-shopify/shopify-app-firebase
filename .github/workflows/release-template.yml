@@ -37,6 +37,7 @@ jobs:
           {
             "private": true,
             "scripts": {
+              "build": "meowapps build",
               "dev": "meowapps dev",
               "deploy": "meowapps deploy",
               "claude": "meowapps claude",
